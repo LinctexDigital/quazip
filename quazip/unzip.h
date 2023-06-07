@@ -212,7 +212,7 @@ extern unzFile ZEXPORT unzOpen2_64 OF((voidpf file,
  * */
 extern unzFile unzOpenInternal (voidpf file,
                                zlib_filefunc64_32_def* pzlib_filefunc64_32_def,
-                               int is64bitOpenFunction, unsigned flags);
+                               int is64bitOpenFunction, unsigned flags, int incomplete);
 
 
 

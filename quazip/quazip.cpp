@@ -224,7 +224,7 @@ QuaZip::~QuaZip()
   delete p;
 }
 
-bool QuaZip::open(Mode mode, zlib_filefunc_def* ioApi)
+bool QuaZip::open(Mode mode, zlib_filefunc_def* ioApi, int incomplete)
 {
   p->zipError=UNZ_OK;
   if(isOpen()) {
@@ -246,7 +246,7 @@ bool QuaZip::open(Mode mode, zlib_filefunc_def* ioApi)
       if (ioApi == NULL) {
           if (p->autoClose)
               flags |= UNZ_AUTO_CLOSE;
-          p->unzFile_f=unzOpenInternal(ioDevice, NULL, 1, flags);
+          p->unzFile_f=unzOpenInternal(ioDevice, NULL, 1, flags, incomplete);
       } else {
           // QuaZIP pre-zip64 compatibility mode
           p->unzFile_f=unzOpen2(ioDevice, ioApi);
@@ -362,8 +362,16 @@ void QuaZip::close()
       p->ioDevice = NULL;
   }
   p->clearDirectoryMap();
-  if(p->zipError==UNZ_OK)
-    p->mode=mdNotOpen;
+  if (p->zipError == UNZ_OK)
+  {
+      p->mode = mdNotOpen;
+  }
+  else
+  {
+      //fix:bug STUDIO-3693: zipClose error，也重置标记，避免实际析构close时再闪调用zipClose崩溃
+      p->mode = mdNotOpen;
+      qWarning("QuaZip::close(): ZIP close error %d", p->zipError);
+  }
 }
 
 void QuaZip::setZipName(const QString& zipName)
@@ -564,6 +572,43 @@ bool QuaZip::getCurrentFileInfo(QuaZipFileInfo64 *info)const
   return true;
 }
 
+bool isStringGBKEncode(const char* str)
+{
+  unsigned int nBytes = 0;//GBK可用1-2个字节编码,中文两个 ,英文一个
+  unsigned char chr = *str;
+  bool bAllAscii = true; //如果全部都是ASCII,
+  for (unsigned int i = 0; str[i] != '\0'; ++i){
+    chr = *(str + i);
+    if ((chr & 0x80) != 0 && nBytes == 0){// 判断是否ASCII编码,如果不是,说明有可能是GBK
+      bAllAscii = false;
+    }
+    if (nBytes == 0) {
+      if (chr >= 0x80) {
+        if (chr >= 0x81 && chr <= 0xFE){
+          nBytes = +2;
+        }
+        else{
+          return false;
+        }
+        nBytes--;
+      }
+    }
+    else{
+      if (chr < 0x40 || chr>0xFE){
+        return false;
+      }
+      nBytes--;
+    }//else end
+  }
+  if (nBytes != 0) {   //违返规则
+    return false;
+  }
+  if (bAllAscii){ //如果全部都是ASCII, 也是GBK
+    return true;
+  }
+  return true;
+}
+
 QString QuaZip::getCurrentFileName()const
 {
   QuaZip *fakeThis=(QuaZip*)this; // non-const
@@ -579,8 +624,22 @@ QString QuaZip::getCurrentFileName()const
       NULL, 0, NULL, 0))!=UNZ_OK)
     return QString();
   fileName.resize(file_info.size_filename);
-  QString result = (file_info.flag & UNZ_ENCODING_UTF8)
-    ? QString::fromUtf8(fileName) : p->fileNameCodec->toUnicode(fileName);
+    
+#ifdef __APPLE__
+    //没有UNZ_ENCODING_UTF8标识时(可能用户手动压缩过工程)，mac下取文件名乱码
+  QString result;
+  if(file_info.flag & UNZ_ENCODING_UTF8)
+      result = QString::fromUtf8(fileName);
+  else
+  {
+      if(isStringGBKEncode(fileName.constData()))
+          result = QTextCodec::codecForName("gbk")->toUnicode(fileName);
+      else
+          result = p->fileNameCodec->toUnicode(fileName);
+  }
+#else
+    QString result = (file_info.flag & UNZ_ENCODING_UTF8)? QString::fromUtf8(fileName) : p->fileNameCodec->toUnicode(fileName);
+#endif
   if (result.isEmpty())
       return result;
   // Add to directory map

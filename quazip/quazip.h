@@ -86,7 +86,7 @@ class QUAZIP_EXPORT QuaZip {
   public:
     /// Useful constants.
     enum Constants {
-      MAX_FILE_NAME_LENGTH=256 /**< Maximum file name length. Taken from
+      MAX_FILE_NAME_LENGTH=1024 /**< Maximum file name length. Taken from
                                  \c UNZ_MAXFILENAMEINZIP constant in
                                  unzip.c. */
     };
@@ -190,7 +190,7 @@ class QUAZIP_EXPORT QuaZip {
      * In short: just forget about the \a ioApi argument and you'll be
      * fine.
      **/
-    bool open(Mode mode, zlib_filefunc_def *ioApi =NULL);
+    bool open(Mode mode, zlib_filefunc_def *ioApi =NULL, int incomplete = 0);
     /// Closes ZIP file.
     /** Call getZipError() to determine if the close was successful.
      *
